@@ -101,3 +101,29 @@ sf::write_sf(centroids_msoa, "centroids_msoa.geojson")
 sf::write_sf(study_location_buffer, "study_location_buffer.geojson")
 sf::write_sf(study_location_sf, "study_location.geojson")
 ```
+
+Let's calculate routes for each OD pair:
+
+```{r}
+#| eval: false
+routes_msoa = stplanr::route(l = desire_lines, route_fun = cyclestreets::journey, plan = "quietest")
+sf::write_sf(routes_msoa, "routes_msoa.geojson")
+```
+
+We'll read-in the pre-saved routes as follows.
+
+```{r}
+routes_msoa = sf::read_sf("routes_msoa.geojson")
+```
+
+```{r}
+names(routes_msoa)
+library(sf)
+attrib = c("Bicycle", "On foot", "gradient_smooth", "quietness")
+routes_msoa_minimal = routes_msoa[, attrib] |> 
+  mutate(quietness = as.numeric(quietness))
+rnet_msoa_raw = stplanr::overline(routes_msoa_minimal, attrib = attrib, fun = list(sum = sum, mean = mean))
+rnet_msoa_quiet = rnet_msoa_raw |> 
+  transmute(Walk = `On foot_sum`, Bike = Bicycle_sum, Quietness = quietness_mean, Gradient = gradient_smooth_mean)
+sf::write_sf(rnet_msoa_quiet, "rnet_msoa_quiet.geojson")
+```
