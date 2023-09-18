@@ -86,7 +86,8 @@ od_msoa = od_all |>
 We can plot the resulting OD data as follows:
 
 ```{r}
-desire_lines = od::od_to_sf(od_msoa, zones_msoa)
+od_msoa$`Area of workplace` = study_location_sf$name
+desire_lines = od::od_to_sf(od_msoa, zones_msoa, zd = study_location_sf)
 tm_shape(desire_lines) +
   tm_lines()
 ```
@@ -165,3 +166,48 @@ m_combined
 tmap_save(m_combined, "m_combined_cyclestreets.html")
 ```
 
+We can calculate uptake as follows.
+
+```{r}
+summary(routes_msoa$distances)
+routes_msoa_uptake = routes_msoa |> 
+  mutate(quietness = as.numeric(quietness)) |> 
+  group_by(`Area of residence`, `Area of workplace`) |> 
+  mutate(distance = sum(distances), gradient = weighted.mean(gradient_smooth * distances)) |> 
+  mutate(pcycle_dutch = pct::uptake_pct_godutch_2020(distance = distance, gradient = gradient)) |> 
+  mutate(`Bicycle (Go Dutch)` = `All categories: Method of travel to work` * pcycle_dutch) 
+```
+
+```{r}
+attrib = c("Bicycle", "Bicycle (Go Dutch)", "On foot", "gradient_smooth", "quietness")
+routes_msoa_minimal = routes_msoa_uptake[attrib]
+rnet_msoa_raw = stplanr::overline(routes_msoa_uptake, attrib = attrib, fun = list(sum = sum, mean = mean))
+rnet_msoa_quiet = rnet_msoa_raw |> 
+  transmute(Walk = `On foot_sum`, Bike = Bicycle_sum, `Bike (Go Dutch)` = round(`Bicycle (Go Dutch)_sum`), Quietness = quietness_mean, Gradient = gradient_smooth_mean)
+sf::write_sf(rnet_msoa_quiet, "rnet_msoa_quiet_go_dutch.geojson", delete_dsn = TRUE)
+```
+
+We'll create an interactive map of the outputs as follows, building on the CRUSE project:
+
+```{r}
+map_rnet = netvis::netvis(max_width = 19,
+  rnet_msoa_quiet,
+  width_regex = "Bik|Walk|Go",
+  popup_vars = popup_vars,
+  width_var_name = "Bicycle trips",
+  col = "Quietness",
+  pal = pal,
+  basemaps = basemaps,
+  legend.col.show = FALSE,
+  output = "tmap"
+  )
+tmap_mode("view")
+# map_rnet
+
+m_combined = tm_shape(zones_msoa, name = "Zones (MSOA)") +
+  tm_fill("foot", alpha = 0.2) +
+  map_rnet +
+  qtm(study_location_sf)
+m_combined
+tmap_save(m_combined, "m_combined_go_dutch.html")
+```
